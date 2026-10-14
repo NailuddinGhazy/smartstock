@@ -1,0 +1,16 @@
+# Laravel
+/backend/.env
+/backend/.env.*
+!/backend/.env.example
+/backend/vendor/
+/backend/node_modules/
+/backend/storage/*.key
+/backend/storage/logs/
+/backend/bootstrap/cache/*.php
+
+# React + Vite
+/smartstock/frontend/node_modules/
+/smartstock/frontend/dist/
+
+# Backup Git
+/git-backup/
