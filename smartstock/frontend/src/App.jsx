@@ -1,18 +1,35 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 
-const initialProducts = [
-  { id: 1, name: 'Buku Tulis', category: 'Alat Tulis', stock: 50, price: 5000 },
-  { id: 2, name: 'Pulpen Hitam', category: 'Alat Tulis', stock: 35, price: 3000 },
-  { id: 3, name: 'Buku Gambar', category: 'Kertas', stock: 20, price: 8000 },
-]
-
 function App() {
-  const [products, setProducts] = useState(initialProducts)
+  const [products, setProducts] = useState([])
+  const [loadingProducts, setLoadingProducts] = useState(true)
   const [activePage, setActivePage] = useState('Dashboard')
   const [searchTerm, setSearchTerm] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [transactions, setTransactions] = useState([])
+
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const response = await fetch('http://127.0.0.1:8000/api/products')
+
+        if (!response.ok) {
+          throw new Error('Gagal mengambil data produk.')
+        }
+
+        const data = await response.json()
+        setProducts(data)
+      } catch (error) {
+        console.error(error)
+        alert('Gagal mengambil produk dari server Laravel.')
+      } finally {
+        setLoadingProducts(false)
+      }
+    }
+
+    fetchProducts()
+  }, [])
 
   const [transactionForm, setTransactionForm] = useState({
     productId: '',
@@ -69,11 +86,10 @@ function App() {
     })
   }
 
-  function handleAddProduct(event) {
+  async function handleAddProduct(event) {
     event.preventDefault()
 
     const newProduct = {
-      id: Date.now(),
       name: formData.name.trim(),
       category: formData.category.trim(),
       stock: Number(formData.stock),
@@ -85,32 +101,86 @@ function App() {
       !newProduct.category ||
       formData.stock === '' ||
       formData.price === '' ||
+      !Number.isInteger(newProduct.stock) ||
       newProduct.stock < 0 ||
+      !Number.isFinite(newProduct.price) ||
       newProduct.price < 0
     ) {
       alert('Lengkapi semua data dengan benar.')
       return
     }
 
-    setProducts([...products, newProduct])
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/products', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(newProduct),
+      })
 
-    setFormData({
-      name: '',
-      category: '',
-      stock: '',
-      price: '',
-    })
+      const data = await response.json()
 
-    setShowForm(false)
+      if (!response.ok) {
+        throw new Error(
+          Object.values(data.errors || {}).flat().join('\n') ||
+          data.message ||
+          'Gagal menyimpan produk.'
+        )
+      }
+
+      setProducts((currentProducts) => [data, ...currentProducts])
+
+      setFormData({
+        name: '',
+        category: '',
+        stock: '',
+        price: '',
+      })
+
+      setShowForm(false)
+      alert('Produk berhasil disimpan ke database!')
+    } catch (error) {
+      console.error(error)
+      alert(error.message || 'Tidak dapat terhubung ke server Laravel.')
+    }
   }
 
-  function handleDeleteProduct(id) {
+  async function handleDeleteProduct(id) {
     const confirmed = window.confirm(
       'Apakah kamu yakin ingin menghapus produk ini?'
     )
 
-    if (confirmed) {
-      setProducts(products.filter((product) => product.id !== id))
+    if (!confirmed) return
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/products/${id}`,
+        {
+          method: 'DELETE',
+          headers: {
+            Accept: 'application/json',
+          },
+        }
+      )
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+
+        throw new Error(
+          data.message || 'Gagal menghapus produk.'
+        )
+      }
+
+      setProducts((currentProducts) =>
+        currentProducts.filter((product) => product.id !== id)
+      )
+
+      alert('Produk berhasil dihapus!')
+    } catch (error) {
+      console.error(error)
+      alert(error.message || 'Tidak dapat terhubung ke server Laravel.')
     }
   }
 
