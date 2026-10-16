@@ -100,3 +100,9 @@ Route::post('/transactions', function (Request $request) {
         throw $error;
     }
 });
+
+Route::get('/transactions', function () {
+    return \App\Models\Transaction::with('details.product')
+        ->latest()
+        ->get();
+});

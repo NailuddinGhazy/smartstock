@@ -32,6 +32,47 @@ function App() {
     fetchProducts()
   }, [])
 
+  useEffect(() => {
+    async function fetchTransactions() {
+      try {
+        const response = await fetch(
+          'http://127.0.0.1:8000/api/transactions',
+          {
+            headers: {
+              Accept: 'application/json',
+            },
+          }
+        )
+
+        if (!response.ok) {
+          throw new Error('Gagal mengambil riwayat transaksi.')
+        }
+
+        const data = await response.json()
+
+        const formattedTransactions = data.flatMap((transaction) =>
+          transaction.details.map((detail) => ({
+            id: detail.id,
+            transactionId: transaction.id,
+            productId: detail.product_id,
+            productName: detail.product?.name || 'Produk tidak ditemukan',
+            quantity: detail.quantity,
+            price: Number(detail.price),
+            total: Number(detail.subtotal),
+            date: new Date(transaction.created_at).toLocaleString('id-ID'),
+          }))
+        )
+
+        setTransactions(formattedTransactions)
+      } catch (error) {
+        console.error(error)
+        alert(error.message || 'Gagal memuat riwayat transaksi.')
+      }
+    }
+
+    fetchTransactions()
+  }, [])
+
   const [transactionForm, setTransactionForm] = useState({
     productId: '',
     quantity: '1',
@@ -49,8 +90,14 @@ function App() {
     0
   )
 
+  const totalStockValue = products.reduce(
+    (total, product) =>
+      total + Number(product.price) * Number(product.stock),
+    0
+  )
+
   const totalRevenue = transactions.reduce(
-    (total, transaction) => total + transaction.total,
+    (total, transaction) => total + Number(transaction.total),
     0
   )
 
@@ -277,7 +324,7 @@ function App() {
   }
 
 
-  function handleTransactionSubmit(event) {
+  async function handleTransactionSubmit(event) {
     event.preventDefault()
 
     const productId = Number(transactionForm.productId)
@@ -302,35 +349,70 @@ function App() {
       return
     }
 
-    const newTransaction = {
-      id: Date.now(),
-      productId: product.id,
-      productName: product.name,
-      quantity,
-      price: product.price,
-      total: product.price * quantity,
-      date: new Date().toLocaleString('id-ID'),
-    }
-
-    setProducts((currentProducts) =>
-      currentProducts.map((item) =>
-        item.id === product.id
-          ? { ...item, stock: item.stock - quantity }
-          : item
+    try {
+      const response = await fetch(
+        'http://127.0.0.1:8000/api/transactions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            product_id: productId,
+            quantity: quantity,
+          }),
+        }
       )
-    )
 
-    setTransactions((currentTransactions) => [
-      ...currentTransactions,
-      newTransaction,
-    ])
+      const data = await response.json().catch(() => ({}))
 
-    setTransactionForm({
-      productId: '',
-      quantity: '1',
-    })
+      if (!response.ok) {
+        throw new Error(
+          Object.values(data.errors || {}).flat().join('\n') ||
+          data.message ||
+          'Gagal menyimpan transaksi.'
+        )
+      }
 
-    alert('Transaksi berhasil disimpan!')
+      const detail = data.details[0]
+
+      const newTransaction = {
+        id: data.id,
+        productId: detail.product_id,
+        productName: product.name,
+        quantity: detail.quantity,
+        price: Number(detail.price),
+        total: Number(data.total),
+        date: new Date(data.created_at).toLocaleString('id-ID'),
+      }
+
+      setProducts((currentProducts) =>
+        currentProducts.map((item) =>
+          item.id === productId
+            ? { ...item, stock: item.stock - quantity }
+            : item
+        )
+      )
+
+      setTransactions((currentTransactions) => [
+        ...currentTransactions,
+        newTransaction,
+      ])
+
+      setTransactionForm({
+        productId: '',
+        quantity: '1',
+      })
+
+      alert('Transaksi berhasil disimpan ke database!')
+    } catch (error) {
+      console.error(error)
+      alert(
+        error.message ||
+        'Tidak dapat terhubung ke server Laravel.'
+      )
+    }
   }
 
   function formatRupiah(amount) {
@@ -408,9 +490,9 @@ function App() {
               </article>
 
               <article className="stat-card">
-                <p>Total Pendapatan</p>
-                <h2>{formatRupiah(0)}</h2>
-                <span>Total penjualan</span>
+                <p>Total Nilai Stok</p>
+                <h2>{formatRupiah(totalStockValue)}</h2>
+                <span>Nilai barang yang tersedia</span>
               </article>
             </section>
 
@@ -424,7 +506,7 @@ function App() {
                 {products.length === 0 ? (
                   <p>Belum ada produk. Tambahkan produk pertamamu!</p>
                 ) : (
-                  products.slice(0, 3).map((product) => (
+                  products.slice(0, 5).map((product) => (
                     <div className="preview-item" key={product.id}>
                       <div>
                         <strong>{product.name}</strong>
