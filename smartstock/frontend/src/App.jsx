@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import './App.css'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, } from 'recharts'
+import { LayoutDashboard, Package, Boxes, ShoppingCart, FileText, } from 'lucide-react'
 
 function App() {
   const [products, setProducts] = useState([])
@@ -9,6 +11,8 @@ function App() {
   const [showForm, setShowForm] = useState(false)
   const [editingProduct, setEditingProduct] = useState(null)
   const [transactions, setTransactions] = useState([])
+  const [cart, setCart] = useState([])
+  const [productSearch, setProductSearch] = useState('')
 
   useEffect(() => {
     async function fetchProducts() {
@@ -60,6 +64,7 @@ function App() {
             price: Number(detail.price),
             total: Number(detail.subtotal),
             date: new Date(transaction.created_at).toLocaleString('id-ID'),
+            dateKey: transaction.created_at.slice(0, 10),
           }))
         )
 
@@ -101,6 +106,30 @@ function App() {
     0
   )
 
+  const salesChartData = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date()
+    date.setHours(0, 0, 0, 0)
+    date.setDate(date.getDate() - (6 - index))
+
+    const dateKey = [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-')
+
+    const revenue = transactions
+      .filter((transaction) => transaction.dateKey === dateKey)
+      .reduce((total, transaction) => total + Number(transaction.total), 0)
+
+    return {
+      tanggal: date.toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+      }),
+      pendapatan: revenue,
+    }
+  })
+
   const totalItemsSold = transactions.reduce(
     (total, transaction) => total + transaction.quantity,
     0
@@ -120,10 +149,6 @@ function App() {
     }))
     .filter((product) => product.sold > 0)
     .sort((a, b) => b.sold - a.sold)[0]
-
-  const filteredProducts = products.filter((product) =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase())
-  )
 
   function handleInputChange(event) {
     const { name, value } = event.target
@@ -385,6 +410,7 @@ function App() {
         price: Number(detail.price),
         total: Number(data.total),
         date: new Date(data.created_at).toLocaleString('id-ID'),
+        dateKey: data.created_at.slice(0, 10),
       }
 
       setProducts((currentProducts) =>
@@ -415,6 +441,80 @@ function App() {
     }
   }
 
+  function addToCart(product) {
+    if (product.stock <= 0) {
+      alert('Stok produk habis.')
+      return
+    }
+
+    setCart((currentCart) => {
+      const existingItem = currentCart.find(
+        (item) => item.id === product.id
+      )
+
+      if (existingItem) {
+        if (existingItem.quantity >= product.stock) {
+          alert('Jumlah melebihi stok yang tersedia.')
+          return currentCart
+        }
+
+        return currentCart.map((item) =>
+          item.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        )
+      }
+
+      return [
+        ...currentCart,
+        {
+          id: product.id,
+          name: product.name,
+          price: Number(product.price),
+          stock: Number(product.stock),
+          quantity: 1,
+        },
+      ]
+    })
+  }
+
+  function updateCartQuantity(productId, change) {
+    setCart((currentCart) =>
+      currentCart
+        .map((item) => {
+          if (item.id !== productId) return item
+
+          const newQuantity = item.quantity + change
+
+          if (newQuantity < 1 || newQuantity > item.stock) {
+            return item
+          }
+
+          return { ...item, quantity: newQuantity }
+        })
+    )
+  }
+
+  function removeFromCart(productId) {
+    setCart((currentCart) =>
+      currentCart.filter((item) => item.id !== productId)
+    )
+  }
+
+  const filteredProducts = products.filter((product) =>
+    product.name.toLowerCase().includes(productSearch.toLowerCase())
+  )
+
+  const cartTotal = cart.reduce(
+    (total, item) => total + item.price * item.quantity,
+    0
+  )
+
+  const cartItemCount = cart.reduce(
+    (total, item) => total + item.quantity,
+    0
+  )
+
   function formatRupiah(amount) {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -429,18 +529,23 @@ function App() {
         <h2 className="brand">SmartStock</h2>
 
         <nav>
-          {['Dashboard', 'Produk', 'Stok Barang', 'Transaksi', 'Laporan'].map(
-            (page) => (
-              <button
-                key={page}
-                type="button"
-                className={`nav-link ${activePage === page ? 'active' : ''}`}
-                onClick={() => setActivePage(page)}
-              >
-                {page}
-              </button>
-            )
-          )}
+          {[
+            { name: 'Dashboard', icon: LayoutDashboard },
+            { name: 'Produk', icon: Package },
+            { name: 'Stok Barang', icon: Boxes },
+            { name: 'Transaksi', icon: ShoppingCart },
+            { name: 'Laporan', icon: FileText },
+          ].map(({ name, icon: Icon }) => (
+            <button
+              key={name}
+              type="button"
+              className={`nav-link ${activePage === name ? 'active' : ''}`}
+              onClick={() => setActivePage(name)}
+            >
+              <Icon size={20} strokeWidth={1.8} />
+              <span>{name}</span>
+            </button>
+          ))}
         </nav>
 
         <p className="sidebar-footer">Inventory Management</p>
@@ -770,68 +875,142 @@ function App() {
 
         {activePage === 'Transaksi' && (
           <>
-            <section className="panel">
+
+            <section className="panel pos-panel">
               <div className="panel-heading">
-                <h2>Buat Transaksi</h2>
-                <p>Pilih produk dan masukkan jumlah yang terjual.</p>
+                <h2>Kasir SmartStock</h2>
+                <p>Pilih produk untuk menambahkannya ke keranjang.</p>
               </div>
 
-              <form
-                className="product-form"
-                onSubmit={handleTransactionSubmit}
-              >
-                <div className="form-group">
-                  <label htmlFor="transaction-product">Produk</label>
-                  <select
-                    id="transaction-product"
-                    value={transactionForm.productId}
-                    onChange={(event) =>
-                      setTransactionForm({
-                        ...transactionForm,
-                        productId: event.target.value,
-                      })
-                    }
-                    required
-                  >
-                    <option value="">Pilih produk</option>
+              <div className="pos-layout">
+                <div className="pos-products">
+                  <div className="form-group">
+                    <label htmlFor="product-search">Cari Produk</label>
+                    <input
+                      id="product-search"
+                      type="search"
+                      placeholder="Cari nama produk..."
+                      value={productSearch}
+                      onChange={(event) => setProductSearch(event.target.value)}
+                    />
+                  </div>
 
-                    {products.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.name} — {formatRupiah(product.price)} (Stok: {product.stock})
-                      </option>
+                  <div className="pos-product-grid">
+                    {filteredProducts.map((product) => (
+                      <button
+                        type="button"
+                        className="pos-product-card"
+                        key={product.id}
+                        disabled={Number(product.stock) <= 0}
+                        onClick={() => addToCart(product)}
+                      >
+                        <span className="pos-product-icon">▦</span>
+                        <strong>{product.name}</strong>
+                        <span className="pos-product-category">
+                          {product.category}
+                        </span>
+                        <strong className="pos-product-price">
+                          {formatRupiah(Number(product.price))}
+                        </strong>
+                        <span className="pos-product-stock">
+                          Stok: {product.stock} unit
+                        </span>
+                        <span className="pos-add-label">
+                          {Number(product.stock) <= 0 ? 'Stok Habis' : '+ Tambah'}
+                        </span>
+                      </button>
                     ))}
-                  </select>
+
+                    {filteredProducts.length === 0 && (
+                      <p className="no-data">Produk tidak ditemukan.</p>
+                    )}
+                  </div>
                 </div>
 
-                <div className="form-group">
-                  <label htmlFor="transaction-quantity">
-                    Jumlah Terjual
-                  </label>
-                  <input
-                    id="transaction-quantity"
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={transactionForm.quantity}
-                    onChange={(event) =>
-                      setTransactionForm({
-                        ...transactionForm,
-                        quantity: event.target.value,
-                      })
-                    }
-                    required
-                  />
-                </div>
+                <div className="pos-cart">
+                  <div className="pos-cart-heading">
+                    <h3>Keranjang Belanja</h3>
+                    <span>{cart.length} produk</span>
+                  </div>
 
-                <button
-                  className="primary-button"
-                  type="submit"
-                  disabled={products.length === 0}
-                >
-                  Simpan Transaksi
-                </button>
-              </form>
+                  {cart.length === 0 ? (
+                    <div className="pos-empty-cart">
+                      <p>Keranjang masih kosong.</p>
+                      <span>Pilih produk untuk memulai transaksi.</span>
+                    </div>
+                  ) : (
+                    <div className="pos-cart-list">
+                      {cart.map((item) => (
+                        <div className="pos-cart-item" key={item.id}>
+                          <div className="pos-cart-item-info">
+                            <strong>{item.name}</strong>
+                            <span>{formatRupiah(item.price)} / unit</span>
+                            <strong>
+                              {formatRupiah(item.price * item.quantity)}
+                            </strong>
+                          </div>
+
+                          <div className="pos-cart-actions">
+                            <div className="pos-quantity-control">
+                              <button
+                                type="button"
+                                aria-label={`Kurangi ${item.name}`}
+                                onClick={() => updateCartQuantity(item.id, -1)}
+                              >
+                                −
+                              </button>
+
+                              <span>{item.quantity}</span>
+
+                              <button
+                                type="button"
+                                aria-label={`Tambah ${item.name}`}
+                                disabled={item.quantity >= item.stock}
+                                onClick={() => updateCartQuantity(item.id, 1)}
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="pos-remove-button"
+                              onClick={() => removeFromCart(item.id)}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="pos-cart-summary">
+                    <div>
+                      <span>Total kuantitas</span>
+                      <strong>{cartItemCount} unit</strong>
+                    </div>
+
+                    <div className="pos-total">
+                      <span>Total Belanja</span>
+                      <strong>{formatRupiah(cartTotal)}</strong>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="primary-button pos-confirm-button"
+                      disabled={cart.length === 0}
+                      onClick={() =>
+                        alert('Keranjang siap! Integrasi konfirmasi dan nota kita buat pada tahap berikutnya.')
+                      }
+                    >
+                      Konfirmasi Transaksi
+                    </button>
+                  </div>
+                </div>
+              </div>
             </section>
+
 
             <section className="panel">
               <div className="panel-heading">
@@ -914,6 +1093,59 @@ function App() {
                     : 'Belum ada penjualan'}
                 </span>
               </article>
+            </section>
+
+            <section className="panel sales-chart-panel">
+              <div className="panel-heading">
+                <h2>Grafik Penjualan</h2>
+                <p>Pendapatan selama 7 hari terakhir.</p>
+              </div>
+
+              <div className="sales-chart">
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={salesChartData}
+                    margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+
+                    <XAxis
+                      dataKey="tanggal"
+                      tick={{ fontSize: 12 }}
+                    />
+
+                    <YAxis
+                      tickFormatter={(value) => {
+                        if (value >= 1000000) {
+                          return `Rp${(value / 1000000).toLocaleString('id-ID')} jt`
+                        }
+
+                        if (value >= 1000) {
+                          return `Rp${(value / 1000).toLocaleString('id-ID')} rb`
+                        }
+
+                        return `Rp${value}`
+                      }}
+                      tick={{ fontSize: 12 }}
+                      width={75}
+                    />
+
+                    <Tooltip
+                      formatter={(value) => [
+                        formatRupiah(Number(value)),
+                        'Pendapatan',
+                      ]}
+                    />
+
+                    <Bar
+                      dataKey="pendapatan"
+                      name="Pendapatan"
+                      fill="#2563eb"
+                      radius={[6, 6, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </section>
 
             <section className="panel">
