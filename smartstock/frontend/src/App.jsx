@@ -7,6 +7,7 @@ function App() {
   const [activePage, setActivePage] = useState('Dashboard')
   const [searchTerm, setSearchTerm] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [editingProduct, setEditingProduct] = useState(null)
   const [transactions, setTransactions] = useState([])
 
   useEffect(() => {
@@ -89,7 +90,7 @@ function App() {
   async function handleAddProduct(event) {
     event.preventDefault()
 
-    const newProduct = {
+    const updatedData = {
       name: formData.name.trim(),
       category: formData.category.trim(),
       stock: Number(formData.stock),
@@ -97,30 +98,37 @@ function App() {
     }
 
     if (
-      !newProduct.name ||
-      !newProduct.category ||
+      !updatedData.name ||
+      !updatedData.category ||
       formData.stock === '' ||
       formData.price === '' ||
-      !Number.isInteger(newProduct.stock) ||
-      newProduct.stock < 0 ||
-      !Number.isFinite(newProduct.price) ||
-      newProduct.price < 0
+      !Number.isInteger(updatedData.stock) ||
+      updatedData.stock < 0 ||
+      !Number.isFinite(updatedData.price) ||
+      updatedData.price < 0
     ) {
       alert('Lengkapi semua data dengan benar.')
       return
     }
 
-    try {
-      const response = await fetch('http://127.0.0.1:8000/api/products', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify(newProduct),
-      })
+    const isEditing = editingProduct !== null
 
-      const data = await response.json()
+    try {
+      const response = await fetch(
+        isEditing
+          ? `http://127.0.0.1:8000/api/products/${editingProduct.id}`
+          : 'http://127.0.0.1:8000/api/products',
+        {
+          method: isEditing ? 'PUT' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify(updatedData),
+        }
+      )
+
+      const data = await response.json().catch(() => ({}))
 
       if (!response.ok) {
         throw new Error(
@@ -130,7 +138,22 @@ function App() {
         )
       }
 
-      setProducts((currentProducts) => [data, ...currentProducts])
+      if (isEditing) {
+        setProducts((currentProducts) =>
+          currentProducts.map((product) =>
+            product.id === data.id ? data : product
+          )
+        )
+
+        alert('Produk berhasil diperbarui!')
+      } else {
+        setProducts((currentProducts) => [
+          data,
+          ...currentProducts,
+        ])
+
+        alert('Produk berhasil disimpan ke database!')
+      }
 
       setFormData({
         name: '',
@@ -139,12 +162,28 @@ function App() {
         price: '',
       })
 
+      setEditingProduct(null)
       setShowForm(false)
-      alert('Produk berhasil disimpan ke database!')
     } catch (error) {
       console.error(error)
-      alert(error.message || 'Tidak dapat terhubung ke server Laravel.')
+      alert(
+        error.message ||
+        'Tidak dapat terhubung ke server Laravel.'
+      )
     }
+  }
+
+  function handleEditProduct(product) {
+    setEditingProduct(product)
+
+    setFormData({
+      name: product.name,
+      category: product.category,
+      stock: String(product.stock),
+      price: String(product.price),
+    })
+
+    setShowForm(true)
   }
 
   async function handleDeleteProduct(id) {
@@ -184,24 +223,59 @@ function App() {
     }
   }
 
-  function handleUpdateStock(id, amount) {
-    const product = products.find((product) => product.id === id)
+
+  async function handleUpdateStock(id, amount) {
+    const product = products.find(
+      (product) => product.id === id
+    )
 
     if (!product) return
 
-    if (product.stock + amount < 0) {
+    const newStock = product.stock + amount
+
+    if (newStock < 0) {
       alert('Stok tidak boleh kurang dari 0.')
       return
     }
 
-    setProducts(
-      products.map((product) =>
-        product.id === id
-          ? { ...product, stock: product.stock + amount }
-          : product
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/products/${id}/stock`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            stock: newStock,
+          }),
+        }
       )
-    )
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+
+        throw new Error(
+          data.message || 'Gagal memperbarui stok.'
+        )
+      }
+
+      const updatedProduct = await response.json()
+
+      setProducts((currentProducts) =>
+        currentProducts.map((product) =>
+          product.id === id
+            ? updatedProduct
+            : product
+        )
+      )
+    } catch (error) {
+      console.error(error)
+      alert(error.message || 'Gagal terhubung ke server Laravel.')
+    }
   }
+
 
   function handleTransactionSubmit(event) {
     event.preventDefault()
@@ -447,7 +521,7 @@ function App() {
                 </div>
 
                 <button className="primary-button" type="submit">
-                  Simpan Produk
+                  {editingProduct ? 'Simpan Perubahan' : 'Simpan Produk'}
                 </button>
               </form>
             )}
@@ -490,13 +564,23 @@ function App() {
                       </td>
                       <td>{formatRupiah(product.price)}</td>
                       <td>
-                        <button
-                          className="delete-button"
-                          type="button"
-                          onClick={() => handleDeleteProduct(product.id)}
-                        >
-                          Hapus
-                        </button>
+                        <div className="product-actions">
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => handleEditProduct(product)}
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            className="delete-button"
+                            type="button"
+                            onClick={() => handleDeleteProduct(product.id)}
+                          >
+                            Hapus
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
