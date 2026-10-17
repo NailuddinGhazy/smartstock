@@ -59,46 +59,83 @@ Route::put('/products/{product}', function (Request $request, Product $product) 
 
 Route::post('/transactions', function (Request $request) {
     $validated = $request->validate([
-        'product_id' => 'required|integer|exists:products,id',
-        'quantity' => 'required|integer|min:1',
+        'items' => 'required|array|min:1',
+        'items.*.product_id' => 'required|integer|distinct|exists:products,id',
+        'items.*.quantity' => 'required|integer|min:1',
     ]);
 
-    try {
-        $transaction = DB::transaction(function () use ($validated) {
-            $product = Product::whereKey($validated['product_id'])
-                ->lockForUpdate()
-                ->firstOrFail();
+    $transaction = DB::transaction(function () use ($validated) {
+        // Urutkan ID agar penguncian stok lebih konsisten.
+        $productIds = collect($validated['items'])
+            ->pluck('product_id')
+            ->sort()
+            ->values();
 
-            $quantity = $validated['quantity'];
+        // Ambil dan kunci semua produk yang akan dibeli.
+        $products = Product::whereIn('id', $productIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
 
-            if ($quantity > $product->stock) {
+        $total = 0;
+        $details = [];
+
+        // Periksa seluruh stok dan hitung total dari database.
+        foreach ($validated['items'] as $index => $item) {
+            $product = $products->get($item['product_id']);
+
+            if (!$product) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
-                    'quantity' => ['Stok tidak mencukupi.'],
+                    "items.$index.product_id" => [
+                        'Produk tidak ditemukan.',
+                    ],
                 ]);
             }
 
-            $subtotal = $product->price * $quantity;
+            if ($item['quantity'] > $product->stock) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    "items.$index.quantity" => [
+                        "Stok {$product->name} tidak mencukupi.",
+                    ],
+                ]);
+            }
 
-            $transaction = Transaction::create([
-                'total' => $subtotal,
-            ]);
+            $subtotal = $product->price * $item['quantity'];
+            $total += $subtotal;
 
-            $transaction->details()->create([
-                'product_id' => $product->id,
-                'quantity' => $quantity,
+            $details[] = [
+                'product' => $product,
+                'quantity' => $item['quantity'],
                 'price' => $product->price,
                 'subtotal' => $subtotal,
+            ];
+        }
+
+        // Simpan satu transaksi utama.
+        $transaction = Transaction::create([
+            'total' => $total,
+        ]);
+
+        // Simpan detail setiap produk dan kurangi stoknya.
+        foreach ($details as $detail) {
+            $transaction->details()->create([
+                'product_id' => $detail['product']->id,
+                'quantity' => $detail['quantity'],
+                'price' => $detail['price'],
+                'subtotal' => $detail['subtotal'],
             ]);
 
-            $product->decrement('stock', $quantity);
+            $detail['product']->decrement(
+                'stock',
+                $detail['quantity']
+            );
+        }
 
-            return $transaction->load('details.product');
-        });
+        return $transaction->load('details.product');
+    });
 
-        return response()->json($transaction, 201);
-    } catch (\Illuminate\Validation\ValidationException $error) {
-        throw $error;
-    }
+    return response()->json($transaction, 201);
 });
 
 Route::get('/transactions', function () {

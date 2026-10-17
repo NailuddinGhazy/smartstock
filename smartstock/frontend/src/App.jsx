@@ -54,19 +54,21 @@ function App() {
 
         const data = await response.json()
 
-        const formattedTransactions = data.flatMap((transaction) =>
-          transaction.details.map((detail) => ({
-            id: detail.id,
-            transactionId: transaction.id,
+        const formattedTransactions = data.map((transaction) => ({
+          id: transaction.id,
+          total: Number(transaction.total),
+          date: new Date(transaction.created_at).toLocaleString('id-ID'),
+          dateKey: transaction.created_at.slice(0, 10),
+
+          items: transaction.details.map((detail) => ({
             productId: detail.product_id,
-            productName: detail.product?.name || 'Produk tidak ditemukan',
-            quantity: detail.quantity,
+            productName:
+              detail.product?.name || 'Produk tidak ditemukan',
+            quantity: Number(detail.quantity),
             price: Number(detail.price),
-            total: Number(detail.subtotal),
-            date: new Date(transaction.created_at).toLocaleString('id-ID'),
-            dateKey: transaction.created_at.slice(0, 10),
-          }))
-        )
+            subtotal: Number(detail.subtotal),
+          })),
+        }))
 
         setTransactions(formattedTransactions)
       } catch (error) {
@@ -131,13 +133,22 @@ function App() {
   })
 
   const totalItemsSold = transactions.reduce(
-    (total, transaction) => total + transaction.quantity,
+    (total, transaction) =>
+      total +
+      transaction.items.reduce(
+        (itemTotal, item) => itemTotal + Number(item.quantity),
+        0
+      ),
     0
   )
 
   const productSales = transactions.reduce((sales, transaction) => {
-    sales[transaction.productId] =
-      (sales[transaction.productId] || 0) + transaction.quantity
+    transaction.items.forEach((item) => {
+      const productId = item.productId
+
+      sales[productId] =
+        (sales[productId] || 0) + Number(item.quantity)
+    })
 
     return sales
   }, {})
@@ -148,16 +159,7 @@ function App() {
       sold: productSales[product.id] || 0,
     }))
     .filter((product) => product.sold > 0)
-    .sort((a, b) => b.sold - a.sold)[0]
-
-  function handleInputChange(event) {
-    const { name, value } = event.target
-
-    setFormData({
-      ...formData,
-      [name]: value,
-    })
-  }
+    .sort((a, b) => b.sold - a.sold)[0] || null
 
   async function handleAddProduct(event) {
     event.preventDefault()
@@ -352,26 +354,34 @@ function App() {
   async function handleTransactionSubmit(event) {
     event.preventDefault()
 
-    const productId = Number(transactionForm.productId)
-    const quantity = Number(transactionForm.quantity)
-
-    const product = products.find(
-      (product) => product.id === productId
-    )
-
-    if (!product) {
-      alert('Pilih produk terlebih dahulu.')
+    if (cart.length === 0) {
+      alert('Keranjang masih kosong.')
       return
     }
 
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      alert('Jumlah pembelian harus berupa bilangan bulat positif.')
-      return
-    }
+    // Validasi stok terbaru berdasarkan data frontend.
+    for (const item of cart) {
+      const product = products.find(
+        (product) => product.id === item.id
+      )
 
-    if (quantity > product.stock) {
-      alert('Stok tidak mencukupi.')
-      return
+      if (!product) {
+        alert(`Produk ${item.name} tidak ditemukan.`)
+        return
+      }
+
+      if (
+        !Number.isInteger(item.quantity) ||
+        item.quantity <= 0
+      ) {
+        alert(`Jumlah ${item.name} tidak valid.`)
+        return
+      }
+
+      if (item.quantity > product.stock) {
+        alert(`Stok ${item.name} tidak mencukupi.`)
+        return
+      }
     }
 
     try {
@@ -384,8 +394,10 @@ function App() {
             Accept: 'application/json',
           },
           body: JSON.stringify({
-            product_id: productId,
-            quantity: quantity,
+            items: cart.map((item) => ({
+              product_id: item.id,
+              quantity: item.quantity,
+            })),
           }),
         }
       )
@@ -400,38 +412,51 @@ function App() {
         )
       }
 
-      const detail = data.details[0]
+      // Perbarui stok berdasarkan hasil dari Laravel.
+      setProducts((currentProducts) =>
+        currentProducts.map((product) => {
+          const updatedProduct = data.details.find(
+            (detail) => detail.product_id === product.id
+          )
 
+          if (!updatedProduct) return product
+
+          return {
+            ...product,
+            stock: product.stock - updatedProduct.quantity,
+          }
+        })
+      )
+
+      // Simpan satu objek untuk seluruh transaksi.
       const newTransaction = {
         id: data.id,
-        productId: detail.product_id,
-        productName: product.name,
-        quantity: detail.quantity,
-        price: Number(detail.price),
         total: Number(data.total),
         date: new Date(data.created_at).toLocaleString('id-ID'),
         dateKey: data.created_at.slice(0, 10),
+
+        items: data.details.map((detail) => ({
+          productId: detail.product_id,
+          productName:
+            detail.product?.name || 'Produk tidak ditemukan',
+          quantity: Number(detail.quantity),
+          price: Number(detail.price),
+          subtotal: Number(detail.subtotal),
+        })),
       }
 
-      setProducts((currentProducts) =>
-        currentProducts.map((item) =>
-          item.id === productId
-            ? { ...item, stock: item.stock - quantity }
-            : item
-        )
-      )
-
       setTransactions((currentTransactions) => [
-        ...currentTransactions,
         newTransaction,
+        ...currentTransactions,
       ])
 
-      setTransactionForm({
-        productId: '',
-        quantity: '1',
-      })
+      // Kosongkan keranjang setelah checkout berhasil.
+      setCart([])
+      setProductSearch('')
 
-      alert('Transaksi berhasil disimpan ke database!')
+      alert(
+        `Transaksi berhasil disimpan!\nTotal belanja: ${formatRupiah(Number(data.total))}`
+      )
     } catch (error) {
       console.error(error)
       alert(
@@ -599,6 +624,59 @@ function App() {
                 <h2>{formatRupiah(totalStockValue)}</h2>
                 <span>Nilai barang yang tersedia</span>
               </article>
+            </section>
+
+            <section className="panel sales-chart-panel">
+              <div className="panel-heading">
+                <h2>Grafik Penjualan</h2>
+                <p>Pendapatan selama 7 hari terakhir.</p>
+              </div>
+
+              <div className="sales-chart">
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={salesChartData}
+                    margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+
+                    <XAxis
+                      dataKey="tanggal"
+                      tick={{ fontSize: 12 }}
+                    />
+
+                    <YAxis
+                      tickFormatter={(value) => {
+                        if (value >= 1000000) {
+                          return `Rp${(value / 1000000).toLocaleString('id-ID')} jt`
+                        }
+
+                        if (value >= 1000) {
+                          return `Rp${(value / 1000).toLocaleString('id-ID')} rb`
+                        }
+
+                        return `Rp${value}`
+                      }}
+                      tick={{ fontSize: 12 }}
+                      width={75}
+                    />
+
+                    <Tooltip
+                      formatter={(value) => [
+                        formatRupiah(Number(value)),
+                        'Pendapatan',
+                      ]}
+                    />
+
+                    <Bar
+                      dataKey="pendapatan"
+                      name="Pendapatan"
+                      fill="#2563eb"
+                      radius={[6, 6, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </section>
 
             <section className="panel">
@@ -1000,9 +1078,7 @@ function App() {
                       type="button"
                       className="primary-button pos-confirm-button"
                       disabled={cart.length === 0}
-                      onClick={() =>
-                        alert('Keranjang siap! Integrasi konfirmasi dan nota kita buat pada tahap berikutnya.')
-                      }
+                      onClick={handleTransactionSubmit}
                     >
                       Konfirmasi Transaksi
                     </button>
@@ -1014,29 +1090,43 @@ function App() {
 
             <section className="panel">
               <div className="panel-heading">
-                <h2>Riwayat Transaksi</h2>
-                <p>Daftar transaksi penjualan yang sudah dicatat.</p>
+                <h2>Riwayat Penjualan</h2>
+                <p>Ringkasan semua transaksi yang telah dicatat.</p>
               </div>
 
               <div className="table-wrapper">
                 <table className="product-table">
                   <thead>
                     <tr>
+                      <th>ID Transaksi</th>
                       <th>Waktu</th>
-                      <th>Produk</th>
-                      <th>Jumlah</th>
-                      <th>Harga Satuan</th>
-                      <th>Total</th>
+                      <th>Detail Produk</th>
+                      <th>Total Kuantitas</th>
+                      <th>Total Penjualan</th>
                     </tr>
                   </thead>
 
                   <tbody>
                     {transactions.map((transaction) => (
                       <tr key={transaction.id}>
+                        <td>TRX-{transaction.id}</td>
                         <td>{transaction.date}</td>
-                        <td>{transaction.productName}</td>
-                        <td>{transaction.quantity} unit</td>
-                        <td>{formatRupiah(transaction.price)}</td>
+
+                        <td>
+                          {transaction.items.map((item) => (
+                            <div key={item.productId}>
+                              {item.productName} × {item.quantity}
+                            </div>
+                          ))}
+                        </td>
+
+                        <td>
+                          {transaction.items.reduce(
+                            (total, item) => total + item.quantity,
+                            0
+                          )} unit
+                        </td>
+
                         <td>{formatRupiah(transaction.total)}</td>
                       </tr>
                     ))}
@@ -1044,17 +1134,13 @@ function App() {
                     {transactions.length === 0 && (
                       <tr>
                         <td colSpan="5" className="no-data">
-                          Belum ada transaksi penjualan.
+                          Belum ada data penjualan.
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
-
-              <p className="product-count">
-                Total {transactions.length} transaksi
-              </p>
             </section>
           </>
         )}
@@ -1158,10 +1244,10 @@ function App() {
                 <table className="product-table">
                   <thead>
                     <tr>
+                      <th>ID Transaksi</th>
                       <th>Waktu</th>
-                      <th>Produk</th>
-                      <th>Jumlah</th>
-                      <th>Harga Satuan</th>
+                      <th>Detail Produk</th>
+                      <th>Total Kuantitas</th>
                       <th>Total Penjualan</th>
                     </tr>
                   </thead>
@@ -1169,10 +1255,24 @@ function App() {
                   <tbody>
                     {transactions.map((transaction) => (
                       <tr key={transaction.id}>
+                        <td>TRX-{transaction.id}</td>
                         <td>{transaction.date}</td>
-                        <td>{transaction.productName}</td>
-                        <td>{transaction.quantity} unit</td>
-                        <td>{formatRupiah(transaction.price)}</td>
+
+                        <td>
+                          {transaction.items.map((item) => (
+                            <div key={item.productId}>
+                              {item.productName} × {item.quantity}
+                            </div>
+                          ))}
+                        </td>
+
+                        <td>
+                          {transaction.items.reduce(
+                            (total, item) => total + item.quantity,
+                            0
+                          )} unit
+                        </td>
+
                         <td>{formatRupiah(transaction.total)}</td>
                       </tr>
                     ))}
