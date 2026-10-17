@@ -13,6 +13,7 @@ function App() {
   const [transactions, setTransactions] = useState([])
   const [cart, setCart] = useState([])
   const [productSearch, setProductSearch] = useState('')
+  const [receiptTransaction, setReceiptTransaction] = useState(null)
 
   useEffect(() => {
     async function fetchProducts() {
@@ -450,13 +451,11 @@ function App() {
         ...currentTransactions,
       ])
 
-      // Kosongkan keranjang setelah checkout berhasil.
       setCart([])
       setProductSearch('')
 
-      alert(
-        `Transaksi berhasil disimpan!\nTotal belanja: ${formatRupiah(Number(data.total))}`
-      )
+      // Tampilkan nota setelah transaksi berhasil disimpan
+      setReceiptTransaction(newTransaction)
     } catch (error) {
       console.error(error)
       alert(
@@ -1086,7 +1085,99 @@ function App() {
                 </div>
               </div>
             </section>
+            <section>
 
+              {receiptTransaction && (
+                <div
+                  className="receipt-modal-overlay"
+                  onClick={(event) => {
+                    if (event.target === event.currentTarget) {
+                      setReceiptTransaction(null)
+                    }
+                  }}
+                >
+                  <section
+                    className="receipt-modal"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="receipt-modal-title"
+                  >
+                    <div className="receipt-modal-header">
+                      <h2 id="receipt-modal-title">Nota Transaksi</h2>
+
+                      <button
+                        type="button"
+                        className="receipt-close-button"
+                        onClick={() => setReceiptTransaction(null)}
+                        aria-label="Tutup nota"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <div className="receipt-success">
+                      Transaksi berhasil disimpan!
+                    </div>
+
+                    <div className="receipt-meta">
+                      <p>
+                        <span>ID Transaksi</span>
+                        <strong>TRX-{receiptTransaction.id}</strong>
+                      </p>
+
+                      <p>
+                        <span>Waktu Transaksi</span>
+                        <strong>{receiptTransaction.date}</strong>
+                      </p>
+                    </div>
+
+                    <div className="receipt-items">
+                      <div className="receipt-items-heading">
+                        <span>Produk</span>
+                        <span>Subtotal</span>
+                      </div>
+
+                      {receiptTransaction.items.map((item) => (
+                        <div className="receipt-item" key={item.productId}>
+                          <div>
+                            <strong>{item.productName}</strong>
+                            <span>
+                              {item.quantity} × {formatRupiah(item.price)}
+                            </span>
+                          </div>
+
+                          <strong>{formatRupiah(item.subtotal)}</strong>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="receipt-total">
+                      <span>Total Belanja</span>
+                      <strong>{formatRupiah(receiptTransaction.total)}</strong>
+                    </div>
+
+                    <div className="receipt-modal-actions">
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => window.print()}
+                      >
+                        Cetak Nota
+                      </button>
+
+                      <button
+                        type="button"
+                        className="receipt-secondary-button"
+                        onClick={() => setReceiptTransaction(null)}
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              )}
+
+            </section>
 
             <section className="panel">
               <div className="panel-heading">
@@ -1103,6 +1194,7 @@ function App() {
                       <th>Detail Produk</th>
                       <th>Total Kuantitas</th>
                       <th>Total Penjualan</th>
+                      <th>Aksi</th>
                     </tr>
                   </thead>
 
@@ -1128,6 +1220,16 @@ function App() {
                         </td>
 
                         <td>{formatRupiah(transaction.total)}</td>
+
+                        <td>
+                          <button
+                            type="button"
+                            className="receipt-secondary-button"
+                            onClick={() => setReceiptTransaction(transaction)}
+                          >
+                            Cetak Nota
+                          </button>
+                        </td>
                       </tr>
                     ))}
 
@@ -1234,6 +1336,96 @@ function App() {
               </div>
             </section>
 
+            {receiptTransaction && (
+              <div
+                className="receipt-modal-overlay"
+                onClick={(event) => {
+                  if (event.target === event.currentTarget) {
+                    setReceiptTransaction(null)
+                  }
+                }}
+              >
+                <section
+                  className="receipt-modal"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="receipt-modal-title"
+                >
+                  <div className="receipt-modal-header">
+                    <h2 id="receipt-modal-title">Nota Transaksi</h2>
+
+                    <button
+                      type="button"
+                      className="receipt-close-button"
+                      onClick={() => setReceiptTransaction(null)}
+                      aria-label="Tutup nota"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="receipt-success">
+                    Transaksi berhasil disimpan!
+                  </div>
+
+                  <div className="receipt-meta">
+                    <p>
+                      <span>ID Transaksi</span>
+                      <strong>TRX-{receiptTransaction.id}</strong>
+                    </p>
+
+                    <p>
+                      <span>Waktu Transaksi</span>
+                      <strong>{receiptTransaction.date}</strong>
+                    </p>
+                  </div>
+
+                  <div className="receipt-items">
+                    <div className="receipt-items-heading">
+                      <span>Produk</span>
+                      <span>Subtotal</span>
+                    </div>
+
+                    {receiptTransaction.items.map((item) => (
+                      <div className="receipt-item" key={item.productId}>
+                        <div>
+                          <strong>{item.productName}</strong>
+                          <span>
+                            {item.quantity} × {formatRupiah(item.price)}
+                          </span>
+                        </div>
+
+                        <strong>{formatRupiah(item.subtotal)}</strong>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="receipt-total">
+                    <span>Total Belanja</span>
+                    <strong>{formatRupiah(receiptTransaction.total)}</strong>
+                  </div>
+
+                  <div className="receipt-modal-actions">
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => window.print()}
+                    >
+                      Cetak Nota
+                    </button>
+
+                    <button
+                      type="button"
+                      className="receipt-secondary-button"
+                      onClick={() => setReceiptTransaction(null)}
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                </section>
+              </div>
+            )}
+
             <section className="panel">
               <div className="panel-heading">
                 <h2>Riwayat Penjualan</h2>
@@ -1249,6 +1441,7 @@ function App() {
                       <th>Detail Produk</th>
                       <th>Total Kuantitas</th>
                       <th>Total Penjualan</th>
+                      <th>Aksi</th>
                     </tr>
                   </thead>
 
@@ -1274,6 +1467,16 @@ function App() {
                         </td>
 
                         <td>{formatRupiah(transaction.total)}</td>
+
+                        <td>
+                          <button
+                            type="button"
+                            className="receipt-secondary-button"
+                            onClick={() => setReceiptTransaction(transaction)}
+                          >
+                            Cetak Nota
+                          </button>
+                        </td>
                       </tr>
                     ))}
 
