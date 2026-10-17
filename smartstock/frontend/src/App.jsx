@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, } from 'recharts'
-import { LayoutDashboard, Package, Boxes, ShoppingCart, FileText, } from 'lucide-react'
+import { LayoutDashboard, Package, Boxes, ShoppingCart, FileText, LogOut, } from 'lucide-react'
+import Login from './login'
+import { apiFetch } from './api'
 
 function App() {
+  const [authStatus, setAuthStatus] = useState('checking')
+  const [user, setUser] = useState(null)
   const [products, setProducts] = useState([])
   const [loadingProducts, setLoadingProducts] = useState(true)
   const [activePage, setActivePage] = useState('Dashboard')
@@ -14,11 +18,49 @@ function App() {
   const [cart, setCart] = useState([])
   const [productSearch, setProductSearch] = useState('')
   const [receiptTransaction, setReceiptTransaction] = useState(null)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function checkSession() {
+      try {
+        const response = await apiFetch('/api/user')
+
+        if (!response.ok) {
+          if (!cancelled) {
+            setUser(null)
+            setAuthStatus('login')
+          }
+          return
+        }
+
+        const currentUser = await response.json()
+
+        if (!cancelled) {
+          setUser(currentUser)
+          setAuthStatus('authenticated')
+        }
+      } catch (error) {
+        console.error('Gagal memeriksa sesi:', error)
+
+        if (!cancelled) {
+          setAuthStatus('error')
+        }
+      }
+    }
+
+    checkSession()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const response = await fetch('http://127.0.0.1:8000/api/products')
+        const response = await apiFetch('/api/products')
 
         if (!response.ok) {
           throw new Error('Gagal mengambil data produk.')
@@ -34,20 +76,17 @@ function App() {
       }
     }
 
-    fetchProducts()
-  }, [])
+    if (authStatus === 'authenticated') {
+      fetchProducts()
+    } else if (authStatus === 'login') {
+      setLoadingProducts(false)
+    }
+  }, [authStatus])
 
   useEffect(() => {
     async function fetchTransactions() {
       try {
-        const response = await fetch(
-          'http://127.0.0.1:8000/api/transactions',
-          {
-            headers: {
-              Accept: 'application/json',
-            },
-          }
-        )
+        const response = await apiFetch('/api/transactions')
 
         if (!response.ok) {
           throw new Error('Gagal mengambil riwayat transaksi.')
@@ -78,8 +117,10 @@ function App() {
       }
     }
 
-    fetchTransactions()
-  }, [])
+    if (authStatus === 'authenticated') {
+      fetchTransactions()
+    }
+  }, [authStatus])
 
   const [transactionForm, setTransactionForm] = useState({
     productId: '',
@@ -92,6 +133,15 @@ function App() {
     stock: '',
     price: '',
   })
+
+  function handleInputChange(event) {
+    const { name, value } = event.target
+
+    setFormData((currentData) => ({
+      ...currentData,
+      [name]: value,
+    }))
+  }
 
   const totalStock = products.reduce(
     (total, product) => total + product.stock,
@@ -189,10 +239,10 @@ function App() {
     const isEditing = editingProduct !== null
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         isEditing
-          ? `http://127.0.0.1:8000/api/products/${editingProduct.id}`
-          : 'http://127.0.0.1:8000/api/products',
+          ? `/api/products/${editingProduct.id}`
+          : '/api/products',
         {
           method: isEditing ? 'PUT' : 'POST',
           headers: {
@@ -269,8 +319,8 @@ function App() {
     if (!confirmed) return
 
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/products/${id}`,
+      const response = await apiFetch(
+        `/api/products/${id}`,
         {
           method: 'DELETE',
           headers: {
@@ -314,8 +364,8 @@ function App() {
     }
 
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/products/${id}/stock`,
+      const response = await apiFetch(
+        `/api/products/${id}/stock`,
         {
           method: 'PATCH',
           headers: {
@@ -348,6 +398,26 @@ function App() {
     } catch (error) {
       console.error(error)
       alert(error.message || 'Gagal terhubung ke server Laravel.')
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      const response = await apiFetch('/logout', {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.message || 'Gagal logout.')
+      }
+
+      setUser(null)
+      setAuthStatus('login')
+      setShowProfileMenu(false)
+    } catch (error) {
+      console.error('Gagal logout:', error)
+      alert(error.message || 'Tidak dapat terhubung ke server.')
     }
   }
 
@@ -386,8 +456,8 @@ function App() {
     }
 
     try {
-      const response = await fetch(
-        'http://127.0.0.1:8000/api/transactions',
+      const response = await apiFetch(
+        '/api/transactions',
         {
           method: 'POST',
           headers: {
@@ -547,6 +617,32 @@ function App() {
     }).format(amount)
   }
 
+  if (authStatus === 'checking') {
+    return <div className="auth-loading">Memeriksa sesi login...</div>
+  }
+
+  if (authStatus === 'error') {
+    return (
+      <div className="auth-loading">
+        <p>Server tidak dapat dihubungi.</p>
+        <button onClick={() => window.location.reload()}>
+          Coba lagi
+        </button>
+      </div>
+    )
+  }
+
+  if (authStatus === 'login') {
+    return (
+      <Login
+        onLoginSuccess={(loggedInUser) => {
+          setUser(loggedInUser)
+          setAuthStatus('authenticated')
+        }}
+      />
+    )
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -582,12 +678,41 @@ function App() {
             <h1>{activePage}</h1>
           </div>
 
-          <div className="profile">
-            <div className="avatar">A</div>
-            <div>
-              <strong>Admin</strong>
-              <p>Administrator</p>
-            </div>
+          <div className="profile-container">
+            <button
+              type="button"
+              className="profile"
+              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              aria-expanded={showProfileMenu}
+              aria-label="Buka menu profil"
+            >
+              <div className="avatar">A</div>
+              <div className="profile-info">
+                <strong>Admin</strong>
+                <p>Administrator</p>
+              </div>
+              <span className="profile-chevron">
+                {showProfileMenu ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {showProfileMenu && (
+              <div className="profile-dropdown">
+                <div className="profile-dropdown-info">
+                  <strong>Admin SmartStock</strong>
+                  <span>Administrator</span>
+                </div>
+
+                <button
+                  type="button"
+                  className="profile-logout"
+                  onClick={handleLogout}
+                >
+                  <LogOut size={17} />
+                  <span>Logout</span>
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
@@ -1513,3 +1638,4 @@ function App() {
 }
 
 export default App
+
