@@ -1,207 +1,138 @@
-
 # SmartStock POS
 
-SmartStock POS is a web-based Point of Sale (POS) application built to manage products, inventory, and sales transactions.
+SmartStock adalah aplikasi web kasir dan manajemen persediaan. Aplikasi terdiri dari frontend React yang berjalan terpisah dari backend Laravel API.
 
-## Features
+## Fitur
 
-- **Dashboard** — Displays business and sales information.
-- **Product Management** — Manages product data and categories.
-- **Inventory Management** — Tracks product stock.
-- **Sales Transactions** — Records sales and transaction details.
-- **Transaction History** — Displays recorded sales transactions.
-- **Reports** — Provides sales-related information.
-- **Authentication** — Provides login and logout functionality.
+- **Dashboard** — Ringkasan jumlah produk, transaksi, pendapatan, nilai stok, produk terbaru, dan grafik penjualan tujuh hari terakhir.
+- **Produk** — Menampilkan, menambah, mengubah, dan menghapus data produk.
+- **Stok Barang** — Menampilkan status stok (menipis pada 5 unit atau kurang) dan menambah atau mengurangi stok.
+- **Kasir dan transaksi** — Mencari produk, mengelola keranjang, memvalidasi jumlah terhadap stok, menyimpan transaksi, mengurangi stok, dan melihat atau mencetak nota.
+- **Riwayat penjualan** — Menampilkan transaksi yang tersimpan beserta produk dan jumlahnya.
+- **Laporan** — Merangkum pendapatan, jumlah transaksi, unit terjual, produk terlaris, grafik, dan riwayat untuk hari, minggu, bulan, tahun, tanggal, atau semua transaksi.
+- **Login dan logout** — Menggunakan autentikasi sesi Laravel; endpoint bisnis memerlukan login.
 
-## Tech Stack
+## Teknologi
 
-### Frontend
-- React 19
-- Vite
-- JavaScript
-- CSS
-- Lucide React
-- Recharts
+- **Frontend:** React 19, Vite, JavaScript, CSS, Lucide React, Recharts.
+- **Backend:** PHP `^8.3`, Laravel `^13.17`, Laravel Sanctum.
+- **Database bawaan:** SQLite. Laravel juga memiliki konfigurasi koneksi MySQL.
 
-### Backend
-- PHP 8.3
-- Laravel 13
-- Laravel Sanctum
-- MySQL
-
-## Project Structure
+## Struktur proyek
 
 ```text
 smartstock/
-├── backend/
+├── backend/                 # Aplikasi Laravel, API, migrasi, dan database
 │   ├── app/
-│   ├── bootstrap/
-│   ├── config/
-│   ├── database/
-│   │   └── migrations/
-│   ├── routes/
-│   ├── .env.example
+│   ├── database/migrations/
+│   ├── routes/api.php
+│   ├── routes/web.php
 │   └── README.md
 ├── smartstock/
-│   └── frontend/
-│       ├── public/
+│   └── frontend/            # Aplikasi React + Vite
 │       ├── src/
-│       ├── package.json
-│       └── vite.config.js
+│       ├── public/
+│       └── README.md
 └── README.md
 ```
 
-## Requirements
+## Persyaratan
 
-Make sure the following tools are installed:
+- PHP 8.3 atau lebih baru dengan ekstensi yang dibutuhkan Laravel dan PDO SQLite.
+- Composer.
+- Node.js dan npm.
+- MySQL hanya jika memilih MySQL alih-alih SQLite.
 
-- PHP 8.3 or a compatible version
-- Composer
-- Node.js and npm
-- MySQL
-- Git
+## Menjalankan untuk pengembangan
 
-## Installation and Setup
+Gunakan dua terminal dari direktori proyek.
 
-### 1. Clone the Repository
+### 1. Siapkan backend
 
-```bash
-git clone https://github.com/NailuddinGhazy/smartstock.git
-cd smartstock
-```
-
-### 2. Install Backend Dependencies
-
-Open a terminal in the backend directory:
+Di terminal pertama:
 
 ```powershell
 cd backend
 composer install
 Copy-Item .env.example .env
-```
-
-### 3. Configure the Backend Environment
-
-Open `backend/.env` and configure the application and database settings.
-
-Use the following configuration for a local MySQL setup:
-
-```dotenv
-APP_URL=http://localhost:8000
-
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=smartstock
-DB_USERNAME=root
-DB_PASSWORD=
-
-SESSION_DRIVER=database
-SESSION_DOMAIN=null
-SANCTUM_STATEFUL_DOMAINS=localhost:5173,localhost:8000,127.0.0.1:5173,127.0.0.1:8000
-```
-
-Adjust the database username and password according to your local MySQL configuration. If `SANCTUM_STATEFUL_DOMAINS` is not present in `.env`, add it.
-
-Create a MySQL database named `smartstock` before running the migrations.
-
-### 4. Generate the Application Key
-
-From the backend directory, run:
-
-```bash
 php artisan key:generate
-```
-
-### 5. Run Database Migrations
-
-Run the following command from the backend directory:
-
-```bash
+if (-not (Test-Path database/database.sqlite)) { New-Item -ItemType File database/database.sqlite }
 php artisan migrate
 ```
 
-Laravel migrations create the database tables required by the application, including users, sessions, products, transactions, and transaction details.
+Konfigurasi `.env.example` sudah memilih SQLite. Secara default, Laravel memakai `backend/database/database.sqlite`. Jika ingin memakai MySQL, ubah `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, dan `DB_PASSWORD` pada `backend/.env`, lalu siapkan databasenya sebelum menjalankan migrasi.
 
-### 6. Create a User Account
+Untuk login, buat akun sendiri melalui Tinker:
 
-The migrations create the `users` table but do not automatically create an administrator account.
-
-To create a user account, open Laravel Tinker from the backend directory:
-
-```bash
+```powershell
 php artisan tinker
 ```
-
-Execute the following PHP code inside Tinker:
 
 ```php
 \App\Models\User::create([
     'name' => 'Admin',
     'email' => 'admin@example.com',
-    'password' => 'GantiPasswordKamu123!',
+    'password' => 'GantiDenganPasswordKuat',
 ]);
 ```
 
-Replace the example name, email, and password with your own values. Make sure the email address has not already been registered and use a strong password.
+Model User meng-hash password saat disimpan. Sebagai alternatif untuk pengembangan saja, `php artisan db:seed` membuat akun `test@example.com` dengan password `password`; jangan gunakan akun contoh tersebut di lingkungan publik.
 
-The User model automatically hashes the password before saving it to the database.
+Jalankan server backend:
 
-Exit Tinker:
-
-```php
-exit
-```
-
-### 7. Start the Backend Server
-
-From the backend directory, run:
-
-```bash
+```powershell
 php artisan serve
 ```
 
-The backend server will be available at:
+Backend berjalan pada `http://localhost:8000`.
 
-`http://localhost:8000`
+### 2. Siapkan frontend
 
-### 8. Install Frontend Dependencies
-
-Open a new terminal from the repository root:
+Di terminal kedua, dari direktori root proyek:
 
 ```powershell
 cd smartstock/frontend
 npm install
-```
-
-### 9. Start the Frontend Server
-
-From the frontend directory, run:
-
-```bash
 npm run dev
 ```
 
-The frontend will be available at:
+Buka `http://localhost:5173`.
 
-`http://localhost:5173`
+## Integrasi lokal
 
-Open this URL in your browser to access SmartStock POS.
+Frontend menggunakan `http://localhost:8000` sebagai alamat API di `src/api.js`. Konfigurasi CORS backend mengizinkan origin `http://localhost:5173`, dan permintaan menggunakan cookie sesi serta perlindungan CSRF Sanctum.
 
-## Authentication
+Untuk pengembangan lokal, pastikan `backend/.env` memiliki domain stateful yang mencakup origin frontend dan host backend, misalnya:
 
-SmartStock uses Laravel authentication for login and logout functionality. Laravel Sanctum supports session-based authentication for protected API endpoints.
+```dotenv
+SANCTUM_STATEFUL_DOMAINS=localhost:5173,localhost:8000,127.0.0.1:5173,127.0.0.1:8000
+```
 
-For local development, the frontend and backend run on separate development servers. The frontend origin must be allowed by the backend CORS configuration, and the frontend and backend domains must be configured correctly for Sanctum.
+Jika host, port, atau domain diubah, sesuaikan juga `backend/config/cors.php` dan alamat API di `smartstock/frontend/src/api.js`. Nilai saat ini ditujukan untuk pengembangan lokal, bukan deployment publik.
 
-## Development Notes
+## Perintah pemeriksaan
 
-- Keep `backend/.env` private and do not commit credentials or application secrets.
-- The frontend communicates with the backend using the Fetch API.
-- Database structure is managed through Laravel migrations.
-- The root `README.md` documents the SmartStock project.
-- The `backend/README.md` remains the default Laravel documentation.
+Jalankan dari direktori frontend:
 
-## License
+```powershell
+npm run lint
+npm run build
+```
 
-No project-specific license has been specified.
+Jalankan tes backend dari direktori `backend`:
+
+```powershell
+php artisan test
+```
+
+Tes backend yang tersedia saat ini adalah tes contoh untuk memastikan halaman Laravel merespons dengan sukses.
+
+## Catatan data
+
+Migrasi membuat tabel pengguna dan sesi Laravel, produk, transaksi, detail transaksi, serta tabel infrastruktur Laravel. Produk memiliki nama, kategori, harga, dan stok. Transaksi menyimpan total dan setiap detail menyimpan produk, kuantitas, harga saat transaksi, dan subtotal. Produk yang telah direferensikan oleh detail transaksi tidak dapat dihapus karena relasi database membatasi penghapusan tersebut.
+
+Jangan commit `backend/.env` atau memasukkan kredensial maupun data produksi ke repositori. File impor spreadsheet/CSV di `backend/` adalah data sumber; kode aplikasi tidak otomatis mengimpor file tersebut.
+
+## Lisensi
+
+Belum ada lisensi khusus proyek yang dinyatakan.
