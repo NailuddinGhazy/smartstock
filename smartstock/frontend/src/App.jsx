@@ -5,6 +5,24 @@ import { LayoutDashboard, Package, Boxes, ShoppingCart, FileText, LogOut, } from
 import Login from './login'
 import { apiFetch } from './api'
 
+function formatDateKey(date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+function formatTransactionDate(createdAt) {
+  const date = new Date(createdAt)
+
+  return {
+    date: date.toLocaleString('id-ID'),
+    dateKey: formatDateKey(date),
+    hour: date.getHours(),
+  }
+}
+
 function App() {
   const [authStatus, setAuthStatus] = useState('checking')
   const [user, setUser] = useState(null)
@@ -19,6 +37,13 @@ function App() {
   const [productSearch, setProductSearch] = useState('')
   const [receiptTransaction, setReceiptTransaction] = useState(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [reportPeriod, setReportPeriod] = useState('all')
+  const [reportSelectedDate, setReportSelectedDate] = useState(() => {
+    return formatDateKey(new Date())
+  })
+  const [reportSelectedWeekDate, setReportSelectedWeekDate] = useState(() =>
+    formatDateKey(new Date())
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -97,8 +122,7 @@ function App() {
         const formattedTransactions = data.map((transaction) => ({
           id: transaction.id,
           total: Number(transaction.total),
-          date: new Date(transaction.created_at).toLocaleString('id-ID'),
-          dateKey: transaction.created_at.slice(0, 10),
+          ...formatTransactionDate(transaction.created_at),
 
           items: transaction.details.map((detail) => ({
             productId: detail.product_id,
@@ -183,7 +207,55 @@ function App() {
     }
   })
 
-  const totalItemsSold = transactions.reduce(
+  const reportToday = new Date()
+  reportToday.setHours(0, 0, 0, 0)
+
+  const reportStart = new Date(reportToday)
+  const reportEnd = new Date(reportToday)
+
+  if (
+    reportPeriod === 'week' ||
+    reportPeriod === 'week-date'
+  ) {
+    const weekAnchor = reportPeriod === 'week-date'
+      ? new Date(`${reportSelectedWeekDate}T00:00:00`)
+      : new Date(reportToday)
+
+    reportStart.setTime(weekAnchor.getTime())
+    reportStart.setDate(
+      reportStart.getDate() - ((reportStart.getDay() + 6) % 7)
+    )
+    reportEnd.setTime(reportStart.getTime())
+    reportEnd.setDate(reportEnd.getDate() + 6)
+  }
+
+  if (reportPeriod === 'date') {
+    const selectedDate = new Date(`${reportSelectedDate}T00:00:00`)
+    reportStart.setTime(selectedDate.getTime())
+    reportEnd.setTime(selectedDate.getTime())
+  } else if (reportPeriod === 'month') {
+    reportStart.setDate(1)
+    reportEnd.setMonth(reportEnd.getMonth() + 1, 0)
+  } else if (reportPeriod === 'year') {
+    reportStart.setMonth(0, 1)
+    reportEnd.setMonth(11, 31)
+  }
+
+  const reportTransactions = transactions.filter((transaction) => {
+    if (reportPeriod === 'all') return true
+
+    return (
+      transaction.dateKey >= formatDateKey(reportStart) &&
+      transaction.dateKey <= formatDateKey(reportEnd)
+    )
+  })
+
+  const reportRevenue = reportTransactions.reduce(
+    (total, transaction) => total + Number(transaction.total),
+    0
+  )
+
+  const reportItemsSold = reportTransactions.reduce(
     (total, transaction) =>
       total +
       transaction.items.reduce(
@@ -193,24 +265,122 @@ function App() {
     0
   )
 
-  const productSales = transactions.reduce((sales, transaction) => {
+  const reportProductSales = reportTransactions.reduce((sales, transaction) => {
     transaction.items.forEach((item) => {
-      const productId = item.productId
-
-      sales[productId] =
-        (sales[productId] || 0) + Number(item.quantity)
+      sales[item.productId] =
+        (sales[item.productId] || 0) + Number(item.quantity)
     })
 
     return sales
   }, {})
 
-  const bestSellingProduct = products
+  const reportBestSellingProduct = products
     .map((product) => ({
       ...product,
-      sold: productSales[product.id] || 0,
+      sold: reportProductSales[product.id] || 0,
     }))
     .filter((product) => product.sold > 0)
     .sort((a, b) => b.sold - a.sold)[0] || null
+
+  let reportChartDates = []
+  let reportChartGrouping = 'day'
+
+  if (reportPeriod === 'today') {
+    reportChartGrouping = 'hour'
+    reportChartDates = Array.from({ length: 24 }, (_, hour) => hour)
+  } else if (reportPeriod === 'date') {
+    reportChartGrouping = 'hour'
+    reportChartDates = Array.from({ length: 24 }, (_, hour) => hour)
+  } else if (
+    reportPeriod === 'week' ||
+    reportPeriod === 'week-date'
+  ) {
+    reportChartDates = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(reportStart)
+      date.setDate(date.getDate() + index)
+      return date
+    })
+  } else if (reportPeriod === 'month') {
+    const daysInMonth = new Date(
+      reportToday.getFullYear(),
+      reportToday.getMonth() + 1,
+      0
+    ).getDate()
+
+    reportChartDates = Array.from({ length: daysInMonth }, (_, index) => {
+      return new Date(reportToday.getFullYear(), reportToday.getMonth(), index + 1)
+    })
+  } else if (reportPeriod === 'year') {
+    reportChartGrouping = 'month'
+    reportChartDates = Array.from({ length: 12 }, (_, index) => {
+      return new Date(reportToday.getFullYear(), index, 1)
+    })
+  } else if (reportTransactions.length > 0) {
+    reportChartGrouping = 'month'
+    const transactionDates = reportTransactions
+      .map((transaction) => transaction.dateKey)
+      .sort()
+    const firstTransactionDate = new Date(`${transactionDates[0]}T00:00:00`)
+    const lastTransactionDate = new Date(
+      `${transactionDates[transactionDates.length - 1]}T00:00:00`
+    )
+    const firstMonth = new Date(
+      firstTransactionDate.getFullYear(),
+      firstTransactionDate.getMonth(),
+      1
+    )
+    const lastMonth = new Date(
+      lastTransactionDate.getFullYear(),
+      lastTransactionDate.getMonth(),
+      1
+    )
+
+    while (firstMonth <= lastMonth) {
+      reportChartDates.push(new Date(firstMonth))
+      firstMonth.setMonth(firstMonth.getMonth() + 1)
+    }
+  }
+
+  const reportChartData = reportChartGrouping === 'hour'
+    ? reportChartDates.map((hour) => ({
+        tanggal: `${String(hour).padStart(2, '0')}:00`,
+        pendapatan: reportTransactions
+          .filter((transaction) => transaction.hour === hour)
+          .reduce((total, transaction) => total + Number(transaction.total), 0),
+      }))
+    : reportChartDates.map((date) => {
+        const bucketKey =
+          reportChartGrouping === 'month'
+            ? formatDateKey(date).slice(0, 7)
+            : formatDateKey(date)
+        const revenue = reportTransactions
+          .filter((transaction) =>
+            reportChartGrouping === 'month'
+              ? transaction.dateKey.startsWith(bucketKey)
+              : transaction.dateKey === bucketKey
+          )
+          .reduce((total, transaction) => total + Number(transaction.total), 0)
+
+        return {
+          tanggal:
+            reportPeriod === 'date'
+              ? date.toLocaleDateString('id-ID', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                })
+              : reportChartGrouping === 'month'
+                ? date.toLocaleDateString('id-ID', {
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : date.toLocaleDateString('id-ID', {
+                    day: '2-digit',
+                    month: 'short',
+                  }),
+          pendapatan: revenue,
+        }
+      })
 
   async function handleAddProduct(event) {
     event.preventDefault()
@@ -503,8 +673,7 @@ function App() {
       const newTransaction = {
         id: data.id,
         total: Number(data.total),
-        date: new Date(data.created_at).toLocaleString('id-ID'),
-        dateKey: data.created_at.slice(0, 10),
+        ...formatTransactionDate(data.created_at),
 
         items: data.details.map((detail) => ({
           productId: detail.product_id,
@@ -598,6 +767,7 @@ function App() {
   const filteredProducts = products.filter((product) =>
     product.name.toLowerCase().includes(productSearch.toLowerCase())
   )
+  const transactionProducts = filteredProducts.slice(0, 10)
 
   const cartTotal = cart.reduce(
     (total, item) => total + item.price * item.quantity,
@@ -796,6 +966,7 @@ function App() {
                       dataKey="pendapatan"
                       name="Pendapatan"
                       fill="#2563eb"
+                      minPointSize={2}
                       radius={[6, 6, 0, 0]}
                     />
                   </BarChart>
@@ -1098,7 +1269,7 @@ function App() {
                   </div>
 
                   <div className="pos-product-grid">
-                    {filteredProducts.map((product) => (
+                    {transactionProducts.map((product) => (
                       <button
                         type="button"
                         className="pos-product-card"
@@ -1127,6 +1298,11 @@ function App() {
                       <p className="no-data">Produk tidak ditemukan.</p>
                     )}
                   </div>
+                  {filteredProducts.length > transactionProducts.length && (
+                    <p className="product-count">
+                      Menampilkan {transactionProducts.length} dari {filteredProducts.length} produk. Gunakan pencarian untuk menemukan produk lainnya.
+                    </p>
+                  )}
                 </div>
 
                 <div className="pos-cart">
@@ -1374,36 +1550,85 @@ function App() {
 
         {activePage === 'Laporan' && (
           <>
+            <section className="panel report-filter-panel">
+              <label htmlFor="report-period">Periode laporan</label>
+              <select
+                id="report-period"
+                value={reportPeriod}
+                onChange={(event) => setReportPeriod(event.target.value)}
+              >
+                <option value="today">Hari ini</option>
+                <option value="week">Minggu ini</option>
+                <option value="week-date">Pilih minggu lain</option>
+                <option value="month">Bulan ini</option>
+                <option value="year">Tahun ini</option>
+                <option value="date">Pilih tanggal sebelumnya</option>
+                <option value="all">Semua transaksi</option>
+              </select>
+              {reportPeriod === 'date' && (
+                <label className="report-date-filter" htmlFor="report-date">
+                  <span>Pilih tanggal</span>
+                  <input
+                    id="report-date"
+                    type="date"
+                    value={reportSelectedDate}
+                    max={formatDateKey(reportToday)}
+                    onChange={(event) =>
+                      setReportSelectedDate(
+                        (currentDate) => event.target.value || currentDate
+                      )
+                    }
+                  />
+                </label>
+              )}
+              {reportPeriod === 'week-date' && (
+                <label className="report-date-filter" htmlFor="report-week">
+                  <span>Pilih tanggal dalam minggu</span>
+                  <input
+                    id="report-week"
+                    type="date"
+                    value={reportSelectedWeekDate}
+                    max={formatDateKey(reportToday)}
+                    onChange={(event) =>
+                      setReportSelectedWeekDate(
+                        (currentDate) => event.target.value || currentDate
+                      )
+                    }
+                  />
+                </label>
+              )}
+            </section>
+
             <section className="stats">
               <article className="stat-card">
                 <p>Total Pendapatan</p>
-                <h2>{formatRupiah(totalRevenue)}</h2>
-                <span>Dari seluruh transaksi</span>
+                <h2>{formatRupiah(reportRevenue)}</h2>
+                <span>Sesuai periode laporan</span>
               </article>
 
               <article className="stat-card">
                 <p>Total Transaksi</p>
-                <h2>{transactions.length}</h2>
+                <h2>{reportTransactions.length}</h2>
                 <span>Transaksi berhasil dicatat</span>
               </article>
 
               <article className="stat-card">
                 <p>Unit Terjual</p>
-                <h2>{totalItemsSold}</h2>
+                <h2>{reportItemsSold}</h2>
                 <span>Total barang terjual</span>
               </article>
 
               <article className="stat-card">
                 <p>Produk Terlaris</p>
                 <h2>
-                  {bestSellingProduct
-                    ? bestSellingProduct.name
+                  {reportBestSellingProduct
+                    ? reportBestSellingProduct.name
                     : '-'}
                 </h2>
                 <span>
-                  {bestSellingProduct
-                    ? `${bestSellingProduct.sold} unit terjual`
-                    : 'Belum ada penjualan'}
+                  {reportBestSellingProduct
+                    ? `${reportBestSellingProduct.sold} unit terjual`
+                    : 'Belum ada penjualan pada periode ini'}
                 </span>
               </article>
             </section>
@@ -1411,13 +1636,34 @@ function App() {
             <section className="panel sales-chart-panel">
               <div className="panel-heading">
                 <h2>Grafik Penjualan</h2>
-                <p>Pendapatan selama 7 hari terakhir.</p>
+                <p>
+                  Pendapatan {reportPeriod === 'all'
+                    ? 'dari semua transaksi.'
+                    : reportPeriod === 'today'
+                      ? 'hari ini.'
+                      : reportPeriod === 'week'
+                        ? 'minggu ini.'
+                        : reportPeriod === 'week-date'
+                          ? `minggu ${reportStart.toLocaleDateString('id-ID', {
+                              day: '2-digit',
+                              month: 'short',
+                            })}–${reportEnd.toLocaleDateString('id-ID', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                            })}.`
+                          : reportPeriod === 'month'
+                            ? 'bulan ini.'
+                            : reportPeriod === 'year'
+                              ? 'tahun ini.'
+                              : `pada ${new Date(`${reportSelectedDate}T00:00:00`).toLocaleDateString('id-ID')}.`}
+                </p>
               </div>
 
               <div className="sales-chart">
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart
-                    data={salesChartData}
+                    data={reportChartData}
                     margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -1554,7 +1800,9 @@ function App() {
             <section className="panel">
               <div className="panel-heading">
                 <h2>Riwayat Penjualan</h2>
-                <p>Ringkasan semua transaksi yang telah dicatat.</p>
+                <p>
+                  Menampilkan {reportTransactions.length} transaksi sesuai periode laporan.
+                </p>
               </div>
 
               <div className="table-wrapper">
@@ -1571,7 +1819,7 @@ function App() {
                   </thead>
 
                   <tbody>
-                    {transactions.map((transaction) => (
+                    {reportTransactions.map((transaction) => (
                       <tr key={transaction.id}>
                         <td>TRX-{transaction.id}</td>
                         <td>{transaction.date}</td>
@@ -1605,10 +1853,10 @@ function App() {
                       </tr>
                     ))}
 
-                    {transactions.length === 0 && (
+                    {reportTransactions.length === 0 && (
                       <tr>
-                        <td colSpan="5" className="no-data">
-                          Belum ada data penjualan.
+                        <td colSpan="6" className="no-data">
+                          Tidak ada transaksi pada periode ini.
                         </td>
                       </tr>
                     )}
@@ -1638,4 +1886,3 @@ function App() {
 }
 
 export default App
-

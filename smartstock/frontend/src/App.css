@@ -666,6 +666,48 @@ input {
   margin-bottom: 24px;
 }
 
+.report-filter-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.report-filter-panel label {
+  color: #344054;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.report-filter-panel select {
+  width: min(100%, 260px);
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f2937;
+  font: inherit;
+}
+
+.report-date-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.report-date-filter input {
+  padding: 9px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f2937;
+  font: inherit;
+}
+
 .sales-chart {
   width: 100%;
   min-width: 0;
@@ -674,6 +716,26 @@ input {
 
 /* NAVBAR MOBILE */
 @media (max-width: 768px) {
+  .report-filter-panel {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .report-filter-panel select {
+    width: 100%;
+  }
+
+  .report-date-filter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .report-date-filter input {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
   .sidebar {
     position: fixed !important;
     top: auto !important;
