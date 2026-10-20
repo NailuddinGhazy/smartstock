@@ -14,3 +14,6 @@
 
 # Backup Git
 /git-backup/
+# File impor data toko (jangan push)
+/backend/Daftar_barang_toko_salsa_siap_impor.xlsx
+/backend/produk_import.csv
